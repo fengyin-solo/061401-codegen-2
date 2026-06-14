@@ -1,9 +1,11 @@
-import { ref, computed, watch } from 'vue'
-import type { GameState, LogEntry, RandomEvent, ActionType, ActionEffect } from '@/types/game'
+import { ref, computed } from 'vue'
+import type { GameState, LogEntry, RandomEvent, ActionType, ActionEffect, CarryInfo } from '@/types/game'
+import { ITEM_WEIGHTS } from '@/types/game'
 import { randomEvents } from '@/data/events'
 
 const STORAGE_KEY_HIGH_SCORE = 'survival_game_high_score'
 const MAX_STAT = 100
+const DEFAULT_MAX_CARRY = 100
 
 const actionEffects: Record<ActionType, ActionEffect> = {
   gatherWood: {
@@ -30,6 +32,7 @@ export function useGame() {
     thirst: 30,
     wood: 10,
     stone: 5,
+    maxCarryCapacity: DEFAULT_MAX_CARRY,
     turn: 0,
     isGameOver: false,
     logs: [],
@@ -39,6 +42,32 @@ export function useGame() {
   let logIdCounter = 0
 
   const canAct = computed(() => !state.value.isGameOver)
+
+  const carryInfo = computed<CarryInfo>(() => {
+    const currentWeight =
+      state.value.wood * ITEM_WEIGHTS.wood + state.value.stone * ITEM_WEIGHTS.stone
+    const maxCapacity = state.value.maxCarryCapacity
+    const burdenRatio = currentWeight / maxCapacity
+
+    let burdenLevel: CarryInfo['burdenLevel'] = 'normal'
+    let penaltyMultiplier = 1
+
+    if (burdenRatio >= 1.0) {
+      burdenLevel = 'overload'
+      penaltyMultiplier = 0.4
+    } else if (burdenRatio >= 0.8) {
+      burdenLevel = 'warning'
+      penaltyMultiplier = 0.7
+    }
+
+    return {
+      currentWeight,
+      maxCapacity,
+      burdenLevel,
+      burdenRatio,
+      penaltyMultiplier,
+    }
+  })
 
   function loadHighScore() {
     try {
@@ -78,7 +107,7 @@ export function useGame() {
     return Math.max(min, Math.min(max, value))
   }
 
-  function applyEffects(effects: ActionEffect) {
+  function applyEffects(effects: ActionEffect, resourcePenalty: number = 1) {
     if (effects.health !== undefined) {
       state.value.health = clampStat(state.value.health + effects.health, 0, MAX_STAT)
     }
@@ -89,10 +118,18 @@ export function useGame() {
       state.value.thirst = clampStat(state.value.thirst + effects.thirst, 0, MAX_STAT)
     }
     if (effects.wood !== undefined) {
-      state.value.wood = Math.max(0, state.value.wood + effects.wood)
+      let woodChange = effects.wood
+      if (woodChange > 0 && resourcePenalty < 1) {
+        woodChange = Math.floor(woodChange * resourcePenalty)
+      }
+      state.value.wood = Math.max(0, state.value.wood + woodChange)
     }
     if (effects.stone !== undefined) {
-      state.value.stone = Math.max(0, state.value.stone + effects.stone)
+      let stoneChange = effects.stone
+      if (stoneChange > 0 && resourcePenalty < 1) {
+        stoneChange = Math.floor(stoneChange * resourcePenalty)
+      }
+      state.value.stone = Math.max(0, state.value.stone + stoneChange)
     }
   }
 
@@ -124,8 +161,21 @@ export function useGame() {
   function performAction(action: ActionType) {
     if (!canPerformAction(action)) return
 
+    const info = carryInfo.value
+    const isGatherAction = action === 'gatherWood' || action === 'gatherStone'
+
+    if (isGatherAction && info.burdenLevel !== 'normal') {
+      const penaltyPercent = Math.round((1 - info.penaltyMultiplier) * 100)
+      if (info.burdenLevel === 'overload') {
+        addLog(`背包严重超重！采集收益下降 ${penaltyPercent}%，请尽快整理背包丢弃部分资源。`, 'warning')
+      } else {
+        addLog(`背包负重过高，采集效率下降 ${penaltyPercent}%。`, 'warning')
+      }
+    }
+
     const effects = actionEffects[action]
-    applyEffects(effects)
+    const resourcePenalty = isGatherAction ? info.penaltyMultiplier : 1
+    applyEffects(effects, resourcePenalty)
     state.value.turn++
 
     addLog(`第 ${state.value.turn} 回合：${actionNames[action]}`, 'action')
@@ -155,6 +205,56 @@ export function useGame() {
     performAction('drink')
   }
 
+  function discardWood(amount: number): boolean {
+    if (state.value.isGameOver) return false
+    if (amount <= 0 || state.value.wood < amount) return false
+    state.value.wood -= amount
+    addLog(`整理背包：丢弃了 ${amount} 个木材（${amount * ITEM_WEIGHTS.wood} 重量）`, 'action')
+    return true
+  }
+
+  function discardStone(amount: number): boolean {
+    if (state.value.isGameOver) return false
+    if (amount <= 0 || state.value.stone < amount) return false
+    state.value.stone -= amount
+    addLog(`整理背包：丢弃了 ${amount} 个石头（${amount * ITEM_WEIGHTS.stone} 重量）`, 'action')
+    return true
+  }
+
+  function autoDiscardTo(targetRatio: number = 0.7): { discardedWood: number; discardedStone: number } {
+    if (state.value.isGameOver) return { discardedWood: 0, discardedStone: 0 }
+
+    const targetWeight = Math.floor(state.value.maxCarryCapacity * targetRatio)
+    let currentWeight =
+      state.value.wood * ITEM_WEIGHTS.wood + state.value.stone * ITEM_WEIGHTS.stone
+
+    if (currentWeight <= targetWeight) return { discardedWood: 0, discardedStone: 0 }
+
+    let discardedWood = 0
+    let discardedStone = 0
+
+    while (currentWeight > targetWeight && state.value.wood > 0) {
+      state.value.wood--
+      discardedWood++
+      currentWeight -= ITEM_WEIGHTS.wood
+    }
+
+    while (currentWeight > targetWeight && state.value.stone > 0) {
+      state.value.stone--
+      discardedStone++
+      currentWeight -= ITEM_WEIGHTS.stone
+    }
+
+    if (discardedWood > 0 || discardedStone > 0) {
+      const parts: string[] = []
+      if (discardedWood > 0) parts.push(`${discardedWood} 木材`)
+      if (discardedStone > 0) parts.push(`${discardedStone} 石头`)
+      addLog(`自动整理背包：丢弃了 ${parts.join('、')}，负重降至 ${currentWeight}/${state.value.maxCarryCapacity}`, 'action')
+    }
+
+    return { discardedWood, discardedStone }
+  }
+
   function restart() {
     state.value = {
       health: 80,
@@ -162,6 +262,7 @@ export function useGame() {
       thirst: 30,
       wood: 10,
       stone: 5,
+      maxCarryCapacity: DEFAULT_MAX_CARRY,
       turn: 0,
       isGameOver: false,
       logs: [],
@@ -177,11 +278,15 @@ export function useGame() {
     state,
     highScore,
     canAct,
+    carryInfo,
     canPerformAction,
     gatherWood,
     gatherStone,
     hunt,
     drink,
+    discardWood,
+    discardStone,
+    autoDiscardTo,
     restart,
   }
 }

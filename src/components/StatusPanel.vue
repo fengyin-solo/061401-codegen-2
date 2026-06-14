@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { CarryInfo } from '@/types/game'
 
 interface StatItem {
   label: string
@@ -17,6 +18,7 @@ interface Props {
   thirst: number
   wood: number
   stone: number
+  carryInfo: CarryInfo
 }
 
 const props = defineProps<Props>()
@@ -66,6 +68,36 @@ const stats = computed<StatItem[]>(() => [
   },
 ])
 
+const burdenStatus = computed(() => {
+  const { burdenLevel, penaltyMultiplier, currentWeight, maxCapacity } = props.carryInfo
+  const penaltyPercent = Math.round((1 - penaltyMultiplier) * 100)
+
+  let label = '正常'
+  let color = 'text-green-400'
+  let icon = '✅'
+  let bgClass = 'bg-green-500/10 border-green-500/30'
+  let barColor = 'bg-green-500'
+  let tip = ''
+
+  if (burdenLevel === 'overload') {
+    label = '严重超重'
+    color = 'text-red-400'
+    icon = '🚨'
+    bgClass = 'bg-red-500/10 border-red-500/30'
+    barColor = 'bg-red-500'
+    tip = `采集收益下降 ${penaltyPercent}%，请尽快整理背包！`
+  } else if (burdenLevel === 'warning') {
+    label = '负重过高'
+    color = 'text-yellow-400'
+    icon = '⚠️'
+    bgClass = 'bg-yellow-500/10 border-yellow-500/30'
+    barColor = 'bg-yellow-500'
+    tip = `采集收益下降 ${penaltyPercent}%`
+  }
+
+  return { label, color, icon, bgClass, barColor, tip, currentWeight, maxCapacity }
+})
+
 function getBarWidth(value: number, max: number): string {
   const percent = Math.max(0, Math.min(100, (value / max) * 100))
   return `${percent}%`
@@ -87,6 +119,42 @@ function isDanger(value: number, max: number, isReverse?: boolean): boolean {
       <span>生存状态</span>
     </h2>
     <div class="space-y-4">
+      <div
+        :class="[burdenStatus.bgClass, 'rounded-xl p-4 border transition-all duration-300',
+          burdenStatus.color === 'text-red-400' ? 'animate-pulse-soft' : ''
+        ]"
+      >
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🎒</span>
+            <span :class="[burdenStatus.color, 'font-bold text-sm']">背包负重</span>
+            <span :class="[burdenStatus.color, 'text-xs flex items-center gap-1']">
+              {{ burdenStatus.icon }} {{ burdenStatus.label }}
+            </span>
+          </div>
+          <span :class="[burdenStatus.color, 'font-bold text-sm tabular-nums']">
+            {{ burdenStatus.currentWeight }} / {{ burdenStatus.maxCapacity }}
+          </span>
+        </div>
+        <div class="h-3 bg-gray-800 rounded-full overflow-hidden">
+          <div
+            :class="[burdenStatus.barColor, 'h-full rounded-full transition-all duration-300 ease-out']"
+            :style="{ width: getBarWidth(burdenStatus.currentWeight, burdenStatus.maxCapacity) }"
+          ></div>
+        </div>
+        <div
+          v-if="burdenStatus.tip"
+          :class="[burdenStatus.color, 'text-xs mt-2 flex items-center gap-1']"
+        >
+          <span>💡</span>
+          <span>{{ burdenStatus.tip }}</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-2 flex gap-4">
+          <span>🪵 木材: {{ wood }} × 2 = {{ wood * 2 }}</span>
+          <span>🪨 石头: {{ stone }} × 3 = {{ stone * 3 }}</span>
+        </div>
+      </div>
+
       <div
         v-for="stat in stats"
         :key="stat.label"

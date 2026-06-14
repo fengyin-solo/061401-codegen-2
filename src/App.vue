@@ -3,10 +3,24 @@ import { computed } from 'vue'
 import StatusPanel from '@/components/StatusPanel.vue'
 import ActionButtons from '@/components/ActionButtons.vue'
 import EventLog from '@/components/EventLog.vue'
+import BackpackPanel from '@/components/BackpackPanel.vue'
 import GameOverModal from '@/components/GameOverModal.vue'
 import { useGame } from '@/composables/useGame'
 
-const { state, highScore, canPerformAction, gatherWood, gatherStone, hunt, drink, restart } = useGame()
+const {
+  state,
+  highScore,
+  carryInfo,
+  canPerformAction,
+  gatherWood,
+  gatherStone,
+  hunt,
+  drink,
+  discardWood,
+  discardStone,
+  autoDiscardTo,
+  restart,
+} = useGame()
 
 const isNewRecord = computed(() => state.value.turn >= highScore.value && state.value.turn > 0)
 </script>
@@ -18,7 +32,7 @@ const isNewRecord = computed(() => state.value.turn >= highScore.value && state.
       <div class="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-900/10 rounded-full blur-3xl"></div>
     </div>
 
-    <div class="relative z-10 max-w-6xl mx-auto px-4 py-8">
+    <div class="relative z-10 max-w-7xl mx-auto px-4 py-8">
       <header class="text-center mb-8">
         <h1 class="text-4xl font-bold mb-2 bg-gradient-to-r from-green-400 via-emerald-400 to-teal-400 bg-clip-text text-transparent">
           🏕️ 荒野生存
@@ -35,9 +49,33 @@ const isNewRecord = computed(() => state.value.turn >= highScore.value && state.
           <span class="text-gray-400 text-sm">最高纪录</span>
           <p class="text-2xl font-bold text-yellow-400 tabular-nums">🏆 {{ highScore }}</p>
         </div>
+        <div
+          :class="[
+            'backdrop-blur px-6 py-3 rounded-xl border',
+            carryInfo.burdenLevel === 'overload'
+              ? 'bg-red-500/10 border-red-500/30'
+              : carryInfo.burdenLevel === 'warning'
+                ? 'bg-yellow-500/10 border-yellow-500/30'
+                : 'bg-game-card/80 border-game-border'
+          ]"
+        >
+          <span class="text-gray-400 text-sm">背包负重</span>
+          <p
+            :class="[
+              'text-2xl font-bold tabular-nums',
+              carryInfo.burdenLevel === 'overload'
+                ? 'text-red-400 animate-pulse-soft'
+                : carryInfo.burdenLevel === 'warning'
+                  ? 'text-yellow-400'
+                  : 'text-green-400'
+            ]"
+          >
+            🎒 {{ carryInfo.currentWeight }}/{{ carryInfo.maxCapacity }}
+          </p>
+        </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div class="space-y-6">
           <StatusPanel
             :health="state.health"
@@ -45,6 +83,7 @@ const isNewRecord = computed(() => state.value.turn >= highScore.value && state.
             :thirst="state.thirst"
             :wood="state.wood"
             :stone="state.stone"
+            :carry-info="carryInfo"
           />
         </div>
 
@@ -63,12 +102,24 @@ const isNewRecord = computed(() => state.value.turn >= highScore.value && state.
         </div>
 
         <div>
+          <BackpackPanel
+            :wood="state.wood"
+            :stone="state.stone"
+            :carry-info="carryInfo"
+            :disabled="state.isGameOver"
+            @discard-wood="discardWood"
+            @discard-stone="discardStone"
+            @auto-discard="autoDiscardTo(0.7)"
+          />
+        </div>
+
+        <div>
           <EventLog :logs="state.logs" />
         </div>
       </div>
 
       <footer class="mt-8 text-center text-gray-500 text-sm">
-        <p>💡 提示：生命值归零或饥饿/口渴值满格则游戏结束</p>
+        <p>💡 提示：生命值归零或饥饿/口渴值满格则游戏结束 | 负重过高会降低采集效率</p>
       </footer>
     </div>
 

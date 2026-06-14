@@ -16,6 +16,8 @@ function getLogColor(type: LogEntry['type']): string {
       return 'text-green-400'
     case 'bad':
       return 'text-red-400'
+    case 'warning':
+      return 'text-orange-400'
     case 'system':
       return 'text-purple-400'
     case 'event':
@@ -25,12 +27,27 @@ function getLogColor(type: LogEntry['type']): string {
   }
 }
 
+function getLogBgClass(type: LogEntry['type']): string {
+  switch (type) {
+    case 'warning':
+      return 'bg-orange-500/5 border-l-2 border-orange-500 pl-2'
+    case 'good':
+      return 'bg-green-500/5 border-l-2 border-green-500 pl-2'
+    case 'bad':
+      return 'bg-red-500/5 border-l-2 border-red-500 pl-2'
+    default:
+      return ''
+  }
+}
+
 function getLogIcon(type: LogEntry['type']): string {
   switch (type) {
     case 'good':
       return '✨'
     case 'bad':
       return '⚠️'
+    case 'warning':
+      return '🎒'
     case 'system':
       return '📢'
     case 'event':
@@ -65,7 +82,7 @@ watch(
       <div
         v-for="log in logs"
         :key="log.id"
-        :class="[getLogColor(log.type), 'animate-slide-up text-sm leading-relaxed flex items-start gap-2']"
+        :class="[getLogColor(log.type), getLogBgClass(log.type), 'animate-slide-up text-sm leading-relaxed flex items-start gap-2 py-1 rounded']"
       >
         <span class="flex-shrink-0">{{ getLogIcon(log.type) }}</span>
         <span>{{ log.text }}</span>

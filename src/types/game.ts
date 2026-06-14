@@ -4,6 +4,7 @@ export interface GameState {
   thirst: number
   wood: number
   stone: number
+  maxCarryCapacity: number
   turn: number
   isGameOver: boolean
   logs: LogEntry[]
@@ -12,7 +13,7 @@ export interface GameState {
 export interface LogEntry {
   id: number
   text: string
-  type: 'action' | 'event' | 'system' | 'good' | 'bad'
+  type: 'action' | 'event' | 'system' | 'good' | 'bad' | 'warning'
   turn: number
 }
 
@@ -38,3 +39,16 @@ export interface ActionEffect {
   wood?: number
   stone?: number
 }
+
+export interface CarryInfo {
+  currentWeight: number
+  maxCapacity: number
+  burdenLevel: 'normal' | 'warning' | 'overload'
+  burdenRatio: number
+  penaltyMultiplier: number
+}
+
+export const ITEM_WEIGHTS = {
+  wood: 2,
+  stone: 3,
+} as const
